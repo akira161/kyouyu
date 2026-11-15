@@ -201,10 +201,17 @@ async function onRoomGone(code, why) {
 }
 function handleShare() {
   const u = ls.get("pendingShare", null); if (!u) return;
-  ls.set("pendingShare", null);
-  locked = false; openAdd();
-  $("aUrl").value = u;
-  autofill();
+  let n = 0;
+  const go = () => {
+    if (!room || !uid) { if (n++ < 20) setTimeout(go, 500); return; }
+    locked = false; openAdd();
+    const el = $("aUrl");
+    if (!el) { if (n++ < 20) setTimeout(go, 500); return; }
+    el.value = u;
+    ls.set("pendingShare", null);
+    autofill();
+  };
+  go();
 }
 function openRoom(code) {
   if (code.length < 16) { ls.set("room", null); fail("古い形式のスペースは使えません。新しい招待リンクから入り直してください"); roomPicker(); return; }
@@ -218,7 +225,7 @@ function openRoom(code) {
   unsubMeta = onSnapshot(doc(fs, "rooms", code), (s) => { meta = s.exists() ? s.data() : null; if (meta && meta.deleted) { onRoomGone(code, "「" + roomName(code) + "」は作成者によって削除されました"); return; } refreshMembers(); }, () => {});
   unsubShared = onSnapshot(sharedCol(), (snap) => { shared = snap.docs.map((d) => ({ ...d.data(), id: d.id, private: false })); rebuild(); }, (e) => fail("読み込めませんでした: " + e.message));
   render();
-  setTimeout(handleShare, 400);
+  setTimeout(handleShare, 600);
 }
 function roomPicker() {
   const list = rooms.map((r) => `<div class="cand" style="cursor:default"><div style="flex:1"><b>${esc(r.name)}</b>${r.id === room ? ' <span class="meta">(表示中)</span>' : ""}</div>
