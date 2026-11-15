@@ -1,0 +1,11 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*"],
+    "rewrites": [
+      { "source": "/api/parse", "function": { "functionId": "parse", "region": "us-central1" } }
+    ]
+  },
+  "functions": { "source": "functions", "runtime": "nodejs22" },
+  "firestore": { "rules": "firestore.rules" }
+}

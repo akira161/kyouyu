@@ -1,0 +1,29 @@
+name: Deploy to Firebase
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Write functions/.env from secrets
+        run: |
+          {
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+            echo "GOOGLE_PLACES_KEY=${{ secrets.GOOGLE_PLACES_KEY }}"
+            echo "GEMINI_MODEL=${{ secrets.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}"
+          } > functions/.env
+      - name: Install functions dependencies
+        run: npm install --prefix functions
+      - name: Save service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_ASIA_NORTHEAST1_40722 }}' > "$RUNNER_TEMP/sa.json"
+      - name: Deploy (hosting + functions + firestore rules)
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: npx firebase-tools deploy --project asia-northeast1-40722 --non-interactive

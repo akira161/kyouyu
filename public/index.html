@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ふたりの行きたい場所</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f5f2ec;--card:#fffdf9;--ink:#1d2a2c;--sub:#7b8587;--line:#e7e1d6;--accent:#1f7a6d;--accent-soft:#dcefe9;--warm:#f2a65a;--warm-soft:#fdebd6;--danger:#c4513f}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink);max-width:560px;margin:0 auto;min-height:100vh;padding:0 16px 120px}
+button,input,select,textarea{font:inherit;color:inherit}
+header{position:sticky;top:0;z-index:500;background:var(--bg);padding:max(14px,env(safe-area-inset-top)) 0 8px}
+.top{display:flex;align-items:center;gap:6px}
+.top h1{flex:1;font-size:19px;margin:0;letter-spacing:.02em}
+.ib{width:40px;height:40px;border:0;border-radius:12px;background:transparent;display:grid;place-items:center;cursor:pointer;position:relative}
+.ib:active{background:var(--line)}
+.ib svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ib .dot{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--warm);display:none}
+.ib.act .dot{display:block}
+#status{font-size:12px;color:var(--sub);min-height:16px;margin:2px 2px 6px}
+#searchRow{display:none;margin:4px 0 6px}
+#searchRow.on{display:block}
+.field{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#fff;outline:0}
+.field:focus{border-color:var(--accent)}
+textarea.field{min-height:64px;resize:vertical}
+.seg{display:flex;background:var(--line);border-radius:14px;padding:3px;gap:3px;margin:6px 0 4px}
+.seg button{flex:1;border:0;background:transparent;padding:8px 0;border-radius:11px;font-size:14px;color:var(--sub);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);font-weight:700;box-shadow:0 1px 3px #0001}
+.banner{background:var(--warm-soft);border-radius:14px;padding:10px 14px;font-size:13px;margin:8px 0}
+.item{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;margin:10px 0;cursor:pointer}
+.item:active{transform:scale(.99)}
+.tile{width:62px;height:62px;border-radius:16px;display:grid;place-items:center;font-size:28px;flex:none;overflow:hidden}
+.tile img{width:100%;height:100%;object-fit:cover}
+.item .b{flex:1;min-width:0}
+.item h3{margin:0;font-size:16px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .ad{font-size:12.5px;color:var(--sub);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tags{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap}
+.tag{font-size:11px;padding:3px 9px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tag.done{background:#e6e3f7;color:#5a4fb0}.tag.new{background:var(--warm);color:#fff}.tag.re{background:var(--warm-soft);color:#a8661c}.tag.pv{background:#e9ecee;color:#566}
+.month{font-size:13px;color:var(--sub);font-weight:700;margin:20px 2px 0}
+.empty{text-align:center;color:var(--sub);padding:56px 12px;font-size:14px;line-height:1.8}
+.empty b{display:block;font-size:34px;margin-bottom:8px}
+/* マップ */
+#mapWrap{display:none;position:relative;margin:8px -16px 0;height:calc(100vh - 230px);min-height:340px}
+#map{position:absolute;inset:0;border-radius:0}
+.mapbtns{position:absolute;left:12px;bottom:92px;z-index:400;display:flex;gap:8px}
+.mapbtns button{border:0;border-radius:99px;background:#1d2a2cdd;color:#fff;padding:9px 14px;font-size:13px;cursor:pointer}
+.pin{width:46px;height:46px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 3px 10px #0004;display:grid;place-items:center;font-size:22px;overflow:hidden}
+.pin.pv{border-color:#667}
+.pin.dn{border-color:#5a4fb0}
+.pin img{width:100%;height:100%;object-fit:cover}
+nav{position:fixed;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));width:min(440px,calc(100% - 24px));background:#fffdf9ee;backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:26px;display:flex;align-items:center;justify-content:space-around;padding:8px 6px;box-shadow:0 8px 28px #0002;z-index:600}
+nav button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--sub);padding:4px 10px;cursor:pointer}
+nav button svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav button.on{color:var(--accent);font-weight:700}
+nav .plus{width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;margin-top:-26px;padding:0;justify-content:center;box-shadow:0 6px 16px #1f7a6d66}
+nav .plus svg{stroke:#fff;width:26px;height:26px}
+#ov{position:fixed;inset:0;background:#0007;z-index:700;display:none}
+#ov.on{display:block}
+#sheet{position:fixed;left:50%;transform:translate(-50%,100%);bottom:0;width:min(560px,100%);max-height:88vh;overflow:auto;background:var(--bg);border-radius:26px 26px 0 0;padding:10px 18px calc(24px + env(safe-area-inset-bottom));z-index:800;transition:transform .22s ease}
+#sheet.on{transform:translate(-50%,0)}
+.grab{width:44px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 12px}
+#sheet h2{font-size:18px;margin:4px 0 12px}
+.lbl{font-size:12px;color:var(--sub);margin:16px 2px 8px;font-weight:700}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:9px 15px;border-radius:99px;background:#fff;border:1px solid var(--line);font-size:14px;cursor:pointer}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.btn{border:0;border-radius:14px;padding:14px;background:var(--accent);color:#fff;font-weight:700;width:100%;cursor:pointer;margin-top:14px}
+.btn:disabled{opacity:.6}
+.btn.soft{background:var(--accent-soft);color:var(--accent)}
+.btn.warn{background:#fbe5e1;color:var(--danger)}
+.stack>*{margin-top:10px}
+.links{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 0}
+.links a{font-size:14px;text-decoration:none;color:var(--accent);background:var(--accent-soft);padding:9px 14px;border-radius:12px;font-weight:600}
+.memo{white-space:pre-wrap;word-break:break-word;font-size:15px;line-height:1.6;margin:10px 0}
+.meta{font-size:12px;color:var(--sub)}
+.code{font-family:ui-monospace,monospace;font-size:12.5px;word-break:break-all;background:var(--accent-soft);padding:10px;border-radius:10px}
+.hidden{display:none!important}
+.cand{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:8px;cursor:pointer}
+.cand input{width:20px;height:20px;margin-top:2px;accent-color:var(--accent);flex:none}
+.cand b{font-size:15px}
+.hero{width:100%;height:160px;border-radius:16px;object-fit:cover;margin-bottom:12px;background:var(--accent-soft)}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>ふたりの行きたい場所</h1>
+    <button class="ib" id="bRoom" aria-label="スペース切替"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.5 0 4 2 4 5"/></svg></button>
+    <button class="ib" id="bSearch" aria-label="検索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+    <button class="ib" id="bFilter" aria-label="絞り込み"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><i class="dot"></i></button>
+  </div>
+  <div id="searchRow"><input class="field" id="q" placeholder="名前・住所・メモで検索"></div>
+  <div id="status"></div>
+  <div class="seg" id="scope"><button data-v="shared" class="on">👫 ふたりで共有</button><button data-v="priv">🔒 自分だけ</button></div>
+</header>
+
+<main id="main"></main>
+<div id="mapWrap">
+  <div id="map"></div>
+  <div class="mapbtns"><button id="mFit">全体表示</button><button id="mLoc">現在地</button><span id="mInfo" style="align-self:center;font-size:12px;background:#fffdf9ee;padding:5px 10px;border-radius:99px"></span></div>
+</div>
+
+<nav id="nav">
+  <button data-t="home" class="on"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z"/></svg>ホーム</button>
+  <button data-t="map"><svg viewBox="0 0 24 24"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>マップ</button>
+  <button class="plus" data-t="add" aria-label="追加"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button data-t="log"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>思い出</button>
+  <button data-t="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>設定</button>
+</nav>
+
+<div id="ov"></div>
+<div id="sheet"><div class="grab"></div><div id="sb"></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, browserPopupRedirectResolver, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+// ▼ Firebaseコンソールの「プロジェクトの設定 > マイアプリ」にある設定をここに貼る
+// ※ authDomain は、コンソールに表示された値(○○.firebaseapp.com)のままにしてください
+const firebaseConfig = {
+  apiKey: "AIzaSyCWBGmFhds01LqT2Rx-sqjSKLohEwAjvLk",
+  authDomain: "asia-northeast1-40722.firebaseapp.com",
+  projectId: "asia-northeast1-40722",
+  appId: "1:592024151681:web:1cbf9a44d6a8a941200f80",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence], popupRedirectResolver: browserPopupRedirectResolver });
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
+const inApp = /Line\/|Instagram|FBAN|FBAV|MicroMessenger|TikTok|musical_ly|Twitter|Snapchat/i.test(navigator.userAgent);
+const fs = getFirestore(app);
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+const CATS = ["ごはん", "カフェ", "旅行", "おでかけ", "その他"];
+const ICON = { "ごはん": ["🍽️", "#fdebd6"], "カフェ": ["☕", "#efe3d3"], "旅行": ["🧳", "#dcefe9"], "おでかけ": ["🎡", "#e6e3f7"], "その他": ["📍", "#e9ecee"] };
+const REACT = ["イマイチ", "良いね", "また行きたい"];
+const SORTS = { new: "新しい順", old: "古い順", name: "名前順" };
+const safeImg = (u) => (/^https:\/\//.test(u || "") ? u : "");
+
+let shared = [], priv = [], spots = [], uid = null, room = null, unsubShared = null, unsubPriv = null, unsubRooms = null, rooms = [], members = [], meta = null, unsubMem = null, unsubMeta = null;
+let tab = "home", scope = "shared", q = "", fSt = "all", fCat = "all", fRe = "all", sort = "new", who = ls.get("who", "");
+let addState = { thumb: "", lat: null, lng: null, mapsUrl: "", isPriv: false, cat: "ごはん", cands: [] };
+const prevSeen = ls.get("lastSeen", 0);
+const markSeen = () => ls.set("lastSeen", Date.now());
+document.addEventListener("visibilitychange", () => document.hidden && markSeen());
+const randCode = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
+const fail = (m) => { $("status").textContent = m; const a = document.getElementById("aMsg"); if (a) a.textContent = m; };
+
+/* ---------- 保存先 ---------- */
+const sharedCol = () => collection(fs, "rooms", room, "spots");
+const privCol = () => collection(fs, "users", uid, "spots");
+const refOf = (s) => (s.private ? doc(privCol(), s.id) : doc(sharedCol(), s.id));
+function clean(s) { const { private: p, id, ...d } = s; return d; }
+async function save(s) { await setDoc(refOf(s), s.private ? { ...clean(s), private: true } : { ...clean(s), by: s.by || uid }); }
+async function remove(s) { await deleteDoc(refOf(s)); }
+async function moveSpot(s, toPrivate) {
+  const d = clean(s);
+  if (toPrivate) { await setDoc(doc(privCol(), s.id), { ...d, private: true }); await deleteDoc(doc(sharedCol(), s.id)); }
+  else { await setDoc(doc(sharedCol(), s.id), { ...d, private: false, by: d.by || uid }); await deleteDoc(doc(privCol(), s.id)); }
+}
+function rebuild() { spots = [...shared, ...priv.map((p) => ({ ...p, private: true }))]; render(); }
+
+/* ---------- ルーム(複数) ---------- */
+const roomsCol = () => collection(fs, "users", uid, "rooms");
+const roomName = (c) => (rooms.find((r) => r.id === c) || {}).name || "共有スペース";
+const inviteLink = (c) => location.origin + location.pathname + "?room=" + c + "&n=" + encodeURIComponent(roomName(c));
+async function addRoom(code, name) {
+  if (!rooms.some((r) => r.id === code)) { rooms.push({ id: code, name }); }
+  await setDoc(doc(roomsCol(), code), { name, createdAt: Date.now() }, { merge: true });
+}
+function openRoom(code) {
+  if (code.length < 16) { ls.set("room", null); fail("古い形式のスペースは使えません。新しい招待リンクから入り直してください"); roomPicker(); return; }
+  room = code; ls.set("room", code);
+  history.replaceState(null, "", location.pathname);
+  if (unsubShared) unsubShared();
+  shared = []; members = []; meta = null; rebuild();
+  if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
+  setDoc(doc(fs, "rooms", code, "members", uid), { name: who || "名無し", joinedAt: Date.now() }, { merge: true }).catch((e) => fail("参加者の登録に失敗: " + e.message));
+  unsubMem = onSnapshot(collection(fs, "rooms", code, "members"), (s) => { members = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => (x.joinedAt || 0) - (y.joinedAt || 0)); refreshMembers(); }, (e) => fail("参加者を読み込めませんでした: " + e.message));
+  unsubMeta = onSnapshot(doc(fs, "rooms", code), (s) => { meta = s.exists() ? s.data() : null; refreshMembers(); }, () => {});
+  unsubShared = onSnapshot(sharedCol(), (snap) => { shared = snap.docs.map((d) => ({ ...d.data(), id: d.id, private: false })); rebuild(); }, (e) => fail("読み込めませんでした: " + e.message));
+  render();
+}
+function roomPicker() {
+  const list = rooms.map((r) => `<div class="cand" style="cursor:default"><div style="flex:1"><b>${esc(r.name)}</b>${r.id === room ? ' <span class="meta">(表示中)</span>' : ""}</div>
+    ${r.id === room ? "" : `<button class="btn soft" style="width:auto;margin:0;padding:8px 14px" data-ra="open" data-c="${r.id}">開く</button>`}
+    <button class="btn soft" style="width:auto;margin:0 0 0 6px;padding:8px 14px" data-ra="inv" data-c="${r.id}">招待</button></div>`).join("");
+  openSheet(`<h2>共有スペース</h2>
+  <p style="margin-top:0;color:var(--sub);font-size:14px">スペースは何個でも作れます(例:彼女と、友だちと、家族と)。スペースごとに招待した人だけが入れます。</p>
+  ${list ? `<div class="lbl">あなたのスペース</div>${list}` : ""}
+  <div class="lbl">新しく作る</div>
+  <input class="field" id="rName" placeholder="スペース名(例:彼女と / 大阪旅行)">
+  <button class="btn" id="rNew">作って招待リンクを出す</button>
+  <div class="lbl">招待を受け取った</div>
+  <div class="meta" style="margin:0 2px 8px">届いたリンクを開けば自動で参加します。開けないときはここに貼ってください。</div>
+  <input class="field" id="rCode" placeholder="数字12桁の招待コード or 招待リンク">
+  <button class="btn soft" id="rJoin">参加する</button>
+  ${rooms.length ? '<button class="btn soft" id="rClose">閉じる</button>' : ""}`, !rooms.length);
+}
+const fmtCode = (d) => d.replace(/(\d{4})(?=\d)/g, "$1-");
+const randDigits = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b % 10).join("");
+async function inviteSheet(code) {
+  const link = inviteLink(code);
+  openSheet(`<h2>「${esc(roomName(code))}」に招待</h2>
+  <p style="margin-top:0;color:var(--sub);font-size:14px">相手に<b>数字の招待コード</b>を伝えるか、リンクを送ってください。コードは<b>7日間</b>有効です。</p>
+  <div class="lbl" style="margin-top:0">数字の招待コード(12桁)</div>
+  <div class="code" id="iDigits" style="font-size:22px;letter-spacing:2px;text-align:center">発行中…</div>
+  <button class="btn soft" id="iCopyCode" data-c="">コードをコピー</button>
+  <div class="lbl">招待リンク</div>
+  <div class="code">${esc(link)}</div>
+  <button class="btn" id="iShare" data-c="${code}">相手に送る(LINEなど)</button>
+  <button class="btn soft" id="iCopy" data-c="${code}">リンクをコピー</button>
+  <button class="btn soft" id="iOk">閉じる</button>
+  <div class="meta" style="margin:8px 2px">相手は、アプリの「招待を受け取った」の欄にこの数字を入れると参加できます。</div>`);
+  try {
+    const d = randDigits();
+    await setDoc(doc(fs, "invites", d), { room: code, name: roomName(code), owner: uid, expiresAt: Date.now() + 7 * 864e5 });
+    const e = $("iDigits"); if (e) { e.textContent = fmtCode(d); }
+    const b2 = $("iCopyCode"); if (b2) b2.dataset.c = d;
+  } catch (e) { const x = $("iDigits"); if (x) x.textContent = "発行できませんでした(" + (e.code || e.message) + ")"; }
+}
+function mineOf(s) { return !!(s.private || (uid && s.by === uid)); }
+
+/* ---------- シート ---------- */
+let locked = false;
+function openSheet(html, lock) { locked = !!lock; $("sb").innerHTML = html; $("ov").classList.add("on"); $("sheet").classList.add("on"); $("sheet").scrollTop = 0; }
+function closeSheet() { if (locked) return; $("ov").classList.remove("on"); $("sheet").classList.remove("on"); }
+$("ov").onclick = closeSheet;
+
+/* ---------- 一覧 ---------- */
+const isNew = (s) => s.createdAt > prevSeen && !mineOf(s);
+function visible(forLog) {
+  const t = q.trim().toLowerCase();
+  const a = spots.filter((s) =>
+    (forLog || (scope === "priv" ? !!s.private : !s.private)) &&
+    (forLog ? !!s.done : (fSt === "all" || (fSt === "done") === !!s.done)) &&
+    (fCat === "all" || s.cat === fCat) && (fRe === "all" || s.reaction === fRe) &&
+    (!t || [s.name, s.address, s.memo, s.tag ? "#" + s.tag : ""].join(" ").toLowerCase().includes(t)));
+  const by = { new: (x, y) => (y.createdAt || 0) - (x.createdAt || 0), old: (x, y) => (x.createdAt || 0) - (y.createdAt || 0), name: (x, y) => String(x.name).localeCompare(String(y.name), "ja") };
+  return a.sort(by[sort]);
+}
+function tileHtml(s) {
+  const [ic, bg] = ICON[s.cat] || ICON["その他"], im = safeImg(s.thumb);
+  return `<div class="tile" style="background:${bg}">${im ? `<img src="${esc(im)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${ic}'))">` : ic}</div>`;
+}
+function itemHtml(s) {
+  return `<div class="item" data-id="${esc(s.id)}" data-p="${s.private ? 1 : 0}">${tileHtml(s)}<div class="b"><h3>${esc(s.name)}</h3><div class="ad">${esc(s.address || s.memo || "")}</div>
+  <div class="ad" style="font-size:11.5px;opacity:.8">${s.createdAt ? (() => { const d = new Date(s.createdAt); return (d.getMonth() + 1) + "/" + d.getDate() + " 追加" + (s.who ? "・" + esc(s.who) : ""); })() : ""}</div>
+  <div class="tags"><span class="tag">${esc(s.cat)}</span>${s.tag ? `<span class="tag">#${esc(s.tag)}</span>` : ""}${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}${s.reaction ? `<span class="tag re">${esc(s.reaction)}</span>` : ""}${isNew(s) ? '<span class="tag new">新着</span>' : ""}</div></div></div>`;
+}
+function render() {
+  document.querySelectorAll("#nav button[data-t]").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
+  [...$("scope").children].forEach((b) => b.classList.toggle("on", b.dataset.v === scope));
+  $("scope").children[0].textContent = "👫 " + (room ? roomName(room) : "共有");
+  $("scope").style.display = tab === "log" ? "none" : "flex";
+  $("bFilter").classList.toggle("act", fSt !== "all" || fCat !== "all" || fRe !== "all" || sort !== "new");
+  $("status").textContent = room ? `共有 ${shared.length}件 ・ 自分だけ ${priv.length}件` : "";
+  $("mapWrap").style.display = tab === "map" ? "block" : "none";
+  $("main").style.display = tab === "map" ? "none" : "block";
+  if (tab === "map") { renderMap(); return; }
+  let h = "";
+  if (tab === "home") {
+    const nn = shared.filter(isNew).length;
+    if (nn && scope === "shared") h += `<div class="banner">前回から <b>${nn}件</b> の新しいスポットが追加されています</div>`;
+    const a = visible(false);
+    h += a.length ? a.map(itemHtml).join("") : `<div class="empty"><b>🗺️</b>${spots.length ? "条件に合う場所がありません" : "まだ何もありません"}<br>下の ＋ から行きたい場所を追加しましょう</div>`;
+  } else {
+    const a = visible(true).sort((x, y) => String(y.visitedAt || "").localeCompare(String(x.visitedAt || "")));
+    if (!a.length) h = `<div class="empty"><b>📔</b>行った場所がここに並びます<br>場所を開いて「行った!」を記録しましょう</div>`;
+    let cur = "";
+    a.forEach((s) => { const m = (s.visitedAt || "").slice(0, 7) || "日付なし"; if (m !== cur) { cur = m; h += `<div class="month">${m === "日付なし" ? m : m.replace("-", "年") + "月"}</div>`; } h += itemHtml(s); });
+  }
+  $("main").innerHTML = h;
+}
+
+/* ---------- マップ(Leaflet + OpenStreetMap) ---------- */
+let map = null, layer = null, meDot = null;
+function renderMap() {
+  if (typeof L === "undefined") { $("mInfo").textContent = "地図を読み込めませんでした"; return; }
+  if (!map) {
+    map = L.map("map", { zoomControl: false }).setView([36.2, 138.2], 5);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+  }
+  setTimeout(() => { map.invalidateSize(); drawPins(true); }, 50);
+}
+function drawPins(fit) {
+  layer.clearLayers();
+  const a = visible(false), pts = [];
+  let none = 0;
+  a.forEach((s) => {
+    if (typeof s.lat !== "number" || typeof s.lng !== "number") { none++; return; }
+    const [ic] = ICON[s.cat] || ICON["その他"], im = safeImg(s.thumb);
+    const html = `<div class="pin ${s.private ? "pv" : ""} ${s.done ? "dn" : ""}">${im ? `<img src="${esc(im)}" alt="" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${ic}'))">` : ic}</div>`;
+    const m = L.marker([s.lat, s.lng], { icon: L.divIcon({ html, className: "", iconSize: [46, 46], iconAnchor: [23, 23] }) }).addTo(layer);
+    m.on("click", () => openDetail(s.id, s.private));
+    pts.push([s.lat, s.lng]);
+  });
+  $("mInfo").textContent = `${pts.length}件を表示` + (none ? `(座標なし ${none}件)` : "");
+  if (fit && pts.length) map.fitBounds(pts, { padding: [60, 60], maxZoom: 15 });
+}
+$("mFit").onclick = () => drawPins(true);
+$("mLoc").onclick = () => {
+  if (!map) return;
+  map.locate({ setView: true, maxZoom: 15 });
+  map.once("locationfound", (e) => { if (meDot) meDot.remove(); meDot = L.circleMarker(e.latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2f7de1", fillOpacity: 1 }).addTo(map); });
+  map.once("locationerror", () => fail("現在地を取得できませんでした(位置情報の許可を確認してください)"));
+};
+
+/* ---------- 詳細 ---------- */
+function find(id, p) { return spots.find((x) => x.id === id && !!x.private === !!p); }
+function openDetail(id, p) {
+  const s = find(id, p); if (!s) return;
+  const maps = s.mapsUrl || "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent([s.name, s.address].filter(Boolean).join(" "));
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const im = safeImg(s.thumb);
+  openSheet(`${im ? `<img class="hero" src="${esc(im)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
+  <h2>${esc(s.name)}</h2>${s.address ? `<div class="meta">${esc(s.address)}</div>` : ""}
+  <div class="tags"><span class="tag">${esc(s.cat)}</span>${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}</div>
+  ${s.memo ? `<div class="memo">${esc(s.memo)}</div>` : ""}
+  <div class="meta">${s.who ? esc(s.who) + " が追加・" : ""}${s.createdAt ? new Date(s.createdAt).toLocaleDateString("ja-JP") : ""}</div>
+  <div class="links"><a href="${esc(maps)}" target="_blank" rel="noopener">Googleマップで開く</a>${/^https?:\/\//.test(s.url || "") ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">元の投稿</a>` : ""}</div>
+  <div class="lbl">${s.done ? "思い出の記録" : "行ったら記録"}</div>
+  <input class="field" type="date" id="dDate" value="${esc(s.visitedAt || today)}">
+  <div class="chips" id="dRe" style="margin-top:10px">${REACT.map((r) => `<span class="chip ${s.reaction === r ? "on" : ""}" data-r="${r}">${r}</span>`).join("")}</div>
+  <div class="stack" data-id="${esc(s.id)}" data-p="${s.private ? 1 : 0}">
+    <button class="btn" id="dDone">${s.done ? "記録を更新" : "行った!にする"}</button>
+    ${s.done ? `<button class="btn soft" id="dUndo">行きたいに戻す</button>` : ""}
+    ${s.private ? `<button class="btn soft" id="dShare">👫 ふたりに共有する</button>` : mineOf(s) ? `<button class="btn soft" id="dPriv">🔒 自分だけにする</button>` : ""}
+    <button class="btn warn" id="dDel">削除</button>
+  </div>`);
+}
+
+/* ---------- 追加 ---------- */
+function openAdd() {
+  addState = { thumb: "", lat: null, lng: null, mapsUrl: "", isPriv: scope === "priv", cat: "ごはん", cands: [] };
+  openSheet(`<h2>行きたい場所を追加</h2>
+  <div class="lbl" style="margin-top:0">SNSのURLから自動入力</div>
+  <div class="row"><input class="field" id="aUrl" type="url" placeholder="TikTokなどのURLを貼る" style="flex:3"><button class="btn soft" id="aAuto" style="flex:1;margin:0;padding:10px">読込</button></div>
+  <div class="meta" id="aMsg" style="margin:8px 2px;min-height:1.2em;color:var(--accent)"></div>
+  <div id="aCands"></div>
+  <button class="btn soft" id="aFromMemo">📝 メモの内容から場所を読み取る</button>
+  <div class="lbl">場所</div>
+  <div class="stack" style="margin-top:0">
+    <div class="row"><input class="field" id="aName" placeholder="場所の名前" style="flex:3"><button class="btn soft" id="aFind" style="flex:1;margin:0;padding:10px">検索</button></div>
+    <input class="field" id="aAddr" placeholder="住所(「検索」で自動入力)">
+    <textarea class="field" id="aMemo" rows="5" placeholder="メモ(行きたい理由など)"></textarea>
+  </div>
+  <div class="lbl">カテゴリ</div>
+  <div class="chips" id="aCat">${CATS.map((c) => `<span class="chip ${c === addState.cat ? "on" : ""}" data-c="${c}">${ICON[c][0]} ${c}</span>`).join("")}</div>
+  <div class="lbl">見られる人</div>
+  <div class="chips" id="aVis"><span class="chip ${addState.isPriv ? "" : "on"}" data-p="0">👫 ふたりで共有</span><span class="chip ${addState.isPriv ? "on" : ""}" data-p="1">🔒 自分だけ</span></div>
+  <button class="btn" id="aSave">追加する</button>
+  <button class="btn soft" id="aSaveClip">📎 場所なし(ネタ動画など)として保存</button>`);
+}
+async function api(body) {
+  const r = await fetch("/api/parse", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
+}
+function renderCands() {
+  const box = $("aCands"); if (!box) return;
+  const c = addState.cands || [];
+  box.innerHTML = c.length > 1
+    ? c.map((s, i) => `<label class="cand"><input type="checkbox" data-i="${i}" checked><div><b>${esc(s.name)}</b><div class="meta">${esc(s.address || "")}</div>${s.memo ? `<div class="meta">${esc(s.memo)}</div>` : ""}</div></label>`).join("")
+      + `<button class="btn" id="aSaveMany">選んだ場所をまとめて追加</button>`
+    : "";
+}
+function fallbackName() {
+  const cap = (addState.caption || $("aMemo").value || "").trim();
+  const line = cap.split(/\n/).map((x) => x.replace(/#\S+/g, "").replace(/\s+/g, " ").trim()).find((x) => x) || "";
+  const tags = [...cap.matchAll(/#([^\s#]+)/g)].map((m) => m[1]);
+  const tag = tags[0] || "";
+  // はっきりした場所がないときは、地域名(都道府県・主な観光地)だけでもよい
+  const area = (cap.match(/北海道|青森|岩手|宮城|秋田|山形|福島|茨城|栃木|群馬|埼玉|千葉|東京|神奈川|新潟|富山|石川|福井|山梨|長野|岐阜|静岡|愛知|三重|滋賀|京都|大阪|兵庫|奈良|和歌山|鳥取|島根|岡山|広島|山口|徳島|香川|愛媛|高知|福岡|佐賀|長崎|熊本|大分|宮崎|鹿児島|沖縄|札幌|横浜|名古屋|神戸|博多|箱根|軽井沢|熱海|鎌倉|日光|金沢|宮古島|石垣島|京橋|梅田|難波|心斎橋|天王寺|渋谷|新宿|池袋|原宿|浅草|銀座/) || [])[0] || "";
+  // 「○○7選」「△△ランキング」「まとめ」などのタイトルらしい部分があれば、それを名前にする
+  const title = (cap.replace(/#\S+/g, " ").match(/[^\n｜|。！!？?【】「」]{2,35}?(?:\d+選|ベスト\d+|TOP\s?\d+|トップ\d+|ランキング|まとめ)/) || [])[0] || "";
+  const u = $("aUrl").value;
+  return (area || (tags.length ? tags.slice(0, 2).join(" ") : "") || title.trim() || line || tag || (/tiktok/.test(u) ? "TikTok動画" : /instagram/.test(u) ? "Instagram投稿" : /youtu/.test(u) ? "YouTube動画" : "名称未設定")).slice(0, 40);
+}
+async function runParse(body, btn, label) {
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  fail("読み込んでいます…");
+  try {
+    const j = await api(body);
+    if (j.url) $("aUrl").value = j.url;
+    if (j.thumb) addState.thumb = j.thumb;
+    addState.cands = []; addState.caption = j.caption || "";
+    if (j.spots && j.spots.length > 1) {
+      addState.cands = j.spots;
+      fail(`${j.spots.length}件のスポットが見つかりました。追加するものを選んでください`);
+    } else {
+      if (j.name) $("aName").value = j.name;
+      if (j.address) $("aAddr").value = j.address;
+      if (j.caption) $("aMemo").value = j.caption; else if (j.memo) $("aMemo").value = j.memo;
+      if (CATS.includes(j.cat)) { addState.cat = j.cat; [...$("aCat").children].forEach((c) => c.classList.toggle("on", c.dataset.c === j.cat)); }
+      Object.assign(addState, { lat: j.lat, lng: j.lng, mapsUrl: j.mapsUrl || "" });
+      if (!j.name) { addState.caption = j.caption || ""; if (!$("aName").value.trim()) $("aName").value = fallbackName(); $("aName").focus(); }
+      fail(j.name ? (j.fromImage ? "画像の文字から見つけました。確認して「追加する」を押してください" : "読み込みました。確認して「追加する」を押してください") : "店名は見つかりませんでした" + (j.aiError ? "(" + j.aiError + ")" : "") + "。メモに文章を足したり直したりして「メモの内容から場所を読み取る」を押すか、店名を入力して「検索」を押してください");
+    }
+    renderCands();
+  } catch (e) { fail("読み込めませんでした(" + e.message + ")"); }
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+}
+async function autofill() {
+  const url = $("aUrl").value.trim();
+  if (!/^https?:\/\//.test(url)) { fail("URLを貼ってください"); return; }
+  await runParse({ url }, $("aAuto"), "読込");
+}
+async function findPlaceUi() {
+  const name = $("aName").value.trim(); if (!name) { $("aName").focus(); return; }
+  const b = $("aFind"); b.disabled = true; b.textContent = "…";
+  try {
+    const { place } = await api({ query: name });
+    if (place) { $("aName").value = place.placeName || name; $("aAddr").value = place.address || ""; Object.assign(addState, { lat: place.lat, lng: place.lng, mapsUrl: place.mapsUrl || "" }); fail("場所が見つかりました"); }
+    else fail("見つかりませんでした。住所を手入力するか、地図の座標なしで保存できます");
+  } catch (e) { fail("検索できませんでした(" + e.message + ")"); }
+  b.disabled = false; b.textContent = "検索";
+}
+
+/* ---------- 絞り込み・設定 ---------- */
+const chipRow = (k, opts, cur) => `<div class="chips" data-k="${k}">${opts.map(([v, l]) => `<span class="chip ${cur === v ? "on" : ""}" data-v="${v}">${l}</span>`).join("")}</div>`;
+function openFilter() {
+  openSheet(`<h2>絞り込み・並び替え</h2>
+  <div class="lbl" style="margin-top:0">ステータス</div>${chipRow("st", [["all", "すべて"], ["want", "行きたい"], ["done", "行った"]], fSt)}
+  <div class="lbl">カテゴリ</div>${chipRow("cat", [["all", "すべて"], ...CATS.map((c) => [c, ICON[c][0] + " " + c])], fCat)}
+  <div class="lbl">リアクション</div>${chipRow("re", [["all", "すべて"], ...REACT.map((r) => [r, r])], fRe)}
+  <div class="lbl">並び順</div>${chipRow("sort", Object.entries(SORTS), sort)}
+  <div class="row"><button class="btn soft" id="fReset">リセット</button><button class="btn" id="fOk">表示する</button></div>`);
+}
+const memHtml = () => members.length ? members.map((m) => esc(m.name) + (m.id === uid ? "(あなた)" : "") + (meta && meta.owner === m.id ? " 👑" : "")).join(" / ") : "読み込み中…";
+function refreshMembers() { const e = document.getElementById("mList"); if (e) e.textContent = ""; if (e) e.innerHTML = memHtml(); const h = document.getElementById("mHead"); if (h) h.textContent = "「" + roomName(room) + "」の参加者(" + members.length + "人)"; }
+function openSettings() {
+  const link = room ? inviteLink(room) : "";
+  openSheet(`<h2>設定</h2>
+  <div class="lbl" style="margin-top:0">あなたの名前(共有の表示用)</div><input class="field" id="sWho" value="${esc(who)}" placeholder="例:たろう">
+  <div class="lbl" id="mHead">「${esc(roomName(room))}」の参加者(${members.length}人)</div>
+  <div class="meta" id="mList" style="margin:0 2px 8px">${memHtml()}</div>
+  <div class="lbl">「${esc(roomName(room))}」の招待リンク</div><div class="code">${esc(link)}</div>
+  <div class="row"><button class="btn soft" id="sInvite">数字の招待コードを出す</button><button class="btn soft" id="sCopy">リンクをコピー</button><button class="btn soft" id="sLeave">このスペースを一覧から外す</button></div>
+  ${!meta || meta.owner === uid ? `<button class="btn soft" id="sDelete" style="color:#b3261e;margin-top:0">このスペースを削除(中のスポットも全部消えます)</button>` : `<div class="meta" style="margin:4px 2px">削除できるのはスペースを作った人だけです</div>`}
+  <div class="lbl">アカウント</div><div class="meta" style="margin-bottom:8px">${esc(auth.currentUser?.email || "")}</div>
+  <button class="btn soft" id="sLogout" style="margin-top:0">ログアウト</button>
+  <button class="btn" id="sOk">閉じる</button>`);
+}
+
+/* ---------- イベント ---------- */
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target && e.target.id === "aName") { e.preventDefault(); findPlaceUi(); } });
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+  try {
+    const nb = t.closest("#nav button[data-t]");
+    if (nb) { const v = nb.dataset.t; if (v === "add") openAdd(); else if (v === "set") openSettings(); else { tab = v; render(); scrollTo(0, 0); } return; }
+    const it = t.closest(".item"); if (it) { openDetail(it.dataset.id, it.dataset.p === "1"); return; }
+    if (t.closest("#scope") && t.dataset.v) { scope = t.dataset.v; render(); return; }
+    // ルーム
+    if (t.id === "bRoom" || t.closest("#bRoom")) { locked = false; roomPicker(); return; }
+    const ra = t.closest("[data-ra]");
+    if (ra) { const c = ra.dataset.c; locked = false; if (ra.dataset.ra === "open") { closeSheet(); openRoom(c); } else inviteSheet(c); return; }
+    if (t.id === "rClose") { closeSheet(); return; }
+    if (t.id === "rNew") { const nm = ($("rName").value.trim() || "ふたりのスペース").slice(0, 20), c = randCode(); await addRoom(c, nm); await setDoc(doc(fs, "rooms", c), { owner: uid, name: nm, createdAt: Date.now() }); locked = false; closeSheet(); openRoom(c); inviteSheet(c); return; }
+    if (t.id === "iCopyCode") { if (!t.dataset.c) return; await navigator.clipboard.writeText(t.dataset.c); t.textContent = "コピーしました ✓"; return; }
+    if (t.id === "iCopy") { await navigator.clipboard.writeText(inviteLink(t.dataset.c)); t.textContent = "コピーしました ✓"; return; }
+    if (t.id === "iShare") { const u = inviteLink(t.dataset.c); try { if (navigator.share) await navigator.share({ title: "ふたりの行きたい場所", text: "「" + roomName(t.dataset.c) + "」に参加してね", url: u }); else { await navigator.clipboard.writeText(u); t.textContent = "コピーしました ✓ LINEに貼ってね"; } } catch {} return; }
+    if (t.id === "iOk") { closeSheet(); return; }
+    if (t.id === "rJoin" && /^[\d\s-]{12,16}$/.test($("rCode").value.trim()) && $("rCode").value.replace(/\D/g, "").length === 12) {
+      const dg = $("rCode").value.replace(/\D/g, "");
+      try {
+        const s = await getDoc(doc(fs, "invites", dg));
+        const dd = s.exists() ? s.data() : null;
+        if (!dd || dd.expiresAt < Date.now()) { fail("招待コードが見つからないか、期限が切れています"); return; }
+        await addRoom(dd.room, dd.name || "共有スペース"); locked = false; closeSheet(); openRoom(dd.room);
+      } catch (e) { fail("参加できませんでした: " + (e.code || e.message)); }
+      return;
+    }
+    if (t.id === "rJoin") { const raw = $("rCode").value.trim(), c = raw.replace(/.*room=/, "").replace(/&.*/, ""); const nm = (raw.match(/[?&]n=([^&]+)/) || [])[1]; if (c.length >= 16) { await addRoom(c, nm ? decodeURIComponent(nm) : "共有スペース"); locked = false; closeSheet(); openRoom(c); } else fail("コードが正しくありません"); return; }
+    // 追加
+    if (t.closest("#aCat") && t.dataset.c) { addState.cat = t.dataset.c; [...$("aCat").children].forEach((c) => c.classList.toggle("on", c === t)); return; }
+    if (t.closest("#aVis") && t.dataset.p) { addState.isPriv = t.dataset.p === "1"; [...$("aVis").children].forEach((c) => c.classList.toggle("on", c === t)); return; }
+    if (t.id === "aAuto") { autofill(); return; }
+    if (t.id === "aFind") { findPlaceUi(); return; }
+    if (t.id === "aFromMemo") { const tx = $("aMemo").value.trim(); if (!tx) { fail("メモが空です"); return; } const keep = $("aMemo").value; await runParse({ text: tx, url: $("aUrl").value.trim() }, t, "📝 メモの内容から場所を読み取る"); $("aMemo").value = keep; return; }
+    if (t.id === "aSaveMany") {
+      const picks = [...document.querySelectorAll("#aCands input[type=checkbox]")].filter((c) => c.checked).map((c) => addState.cands[+c.dataset.i]);
+      if (!picks.length) { fail("追加する場所を選んでください"); return; }
+      t.disabled = true; t.textContent = "追加しています…";
+      const url = $("aUrl").value.trim(), now = Date.now();
+      for (let i = 0; i < picks.length; i++) {
+        const c = picks[i];
+        await save({ id: crypto.randomUUID(), name: c.name, address: c.address || "", url, memo: [c.memo, addState.caption].filter(Boolean).join("\n\n"), cat: CATS.includes(c.cat) ? c.cat : addState.cat, who, done: false, createdAt: now + i, private: addState.isPriv, thumb: addState.thumb, lat: c.lat, lng: c.lng, mapsUrl: c.mapsUrl || "" });
+      }
+      closeSheet(); tab = "home"; scope = addState.isPriv ? "priv" : "shared"; render(); return;
+    }
+    if (t.id === "aSaveClip") {
+      const url = $("aUrl").value.trim(); if (!url) { fail("URLを貼ってください"); $("aUrl").focus(); return; }
+      const cap = (addState.caption || $("aMemo").value || "").trim();
+      const name = $("aName").value.trim() || fallbackName();
+      const s = { id: crypto.randomUUID(), name, address: "", url, memo: $("aMemo").value.trim() || cap, cat: "その他", tag: "ネタ", who, done: false, createdAt: Date.now(), private: addState.isPriv, thumb: addState.thumb, lat: null, lng: null, mapsUrl: "" };
+      t.disabled = true; await save(s); closeSheet(); tab = "home"; scope = s.private ? "priv" : "shared"; render(); return;
+    }
+    if (t.id === "aSave") {
+      const name = $("aName").value.trim() || fallbackName();
+      const s = { id: crypto.randomUUID(), name, address: $("aAddr").value.trim(), url: $("aUrl").value.trim(), memo: $("aMemo").value.trim(), cat: addState.cat, who, done: false, createdAt: Date.now(), private: addState.isPriv, thumb: addState.thumb, lat: addState.lat, lng: addState.lng, mapsUrl: addState.mapsUrl };
+      await save(s); closeSheet(); tab = "home"; scope = s.private ? "priv" : "shared"; render(); return;
+    }
+    // 詳細
+    if (t.closest("#dRe") && t.dataset.r) { const on = t.classList.contains("on"); [...$("dRe").children].forEach((c) => c.classList.remove("on")); if (!on) t.classList.add("on"); return; }
+    const st = t.closest(".stack[data-id]");
+    if (st) {
+      const s = find(st.dataset.id, st.dataset.p === "1"); if (!s) return;
+      if (t.id === "dDone") { const r = $("dRe").querySelector(".on"); await save({ ...s, done: true, visitedAt: $("dDate").value || "", reaction: r ? r.dataset.r : "" }); closeSheet(); }
+      else if (t.id === "dUndo") { await save({ ...s, done: false }); closeSheet(); }
+      else if (t.id === "dShare" || t.id === "dPriv") { await moveSpot(s, t.id === "dPriv"); closeSheet(); }
+      else if (t.id === "dDel") { if (t.dataset.armed) { await remove(s); closeSheet(); } else { t.dataset.armed = "1"; t.textContent = "もう一度押すと削除します"; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ""; t.textContent = "削除"; } }, 3000); } }
+      return;
+    }
+    // 絞り込み
+    const row = t.closest(".chips[data-k]");
+    if (row && t.dataset.v !== undefined) { const k = row.dataset.k, v = t.dataset.v; if (k === "st") fSt = v; if (k === "cat") fCat = v; if (k === "re") fRe = v; if (k === "sort") sort = v; [...row.children].forEach((c) => c.classList.toggle("on", c === t)); render(); return; }
+    if (t.id === "fReset") { fSt = fCat = fRe = "all"; sort = "new"; render(); openFilter(); return; }
+    if (t.id === "fOk") { closeSheet(); return; }
+    // 設定
+    if (t.id === "gLogin") { googleLogin(); return; }
+    if (t.id === "sLogout") { who = $("sWho").value.trim(); ls.set("who", who); await signOut(auth); return; }
+    if (t.id === "sOk") { who = $("sWho").value.trim(); ls.set("who", who); if (room && who) setDoc(doc(fs, "rooms", room, "members", uid), { name: who }, { merge: true }).catch((e) => fail("名前を更新できませんでした: " + e.message)); closeSheet(); return; }
+    if (t.id === "sDelete") {
+      const old = room, nm = roomName(old);
+      if (!confirm("「" + nm + "」を削除します。中のスポット " + shared.length + "件もすべて消えて、元に戻せません。よろしいですか?")) return;
+      t.disabled = true; t.textContent = "削除しています…";
+      if (unsubShared) unsubShared(); if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
+      const items = [...shared]; shared = [];
+      for (const s of items) await deleteDoc(doc(fs, "rooms", old, "spots", s.id));
+      await deleteDoc(doc(fs, "rooms", old, "members", uid)).catch(() => {});
+      await deleteDoc(doc(fs, "rooms", old)).catch(() => {});
+      await deleteDoc(doc(roomsCol(), old));
+      rooms = rooms.filter((r) => r.id !== old); room = null; ls.set("room", null);
+      rebuild(); locked = false; closeSheet();
+      if (rooms.length) openRoom(rooms[0].id); else roomPicker();
+      return;
+    }
+    if (t.id === "sInvite") { inviteSheet(room); return; }
+    if (t.id === "sCopy") { await navigator.clipboard.writeText(inviteLink(room)); t.textContent = "コピーしました"; return; }
+    if (t.id === "sLeave") { const old = room; if (unsubShared) unsubShared(); ls.set("room", null); room = null; shared = []; await deleteDoc(doc(roomsCol(), old)); rooms = rooms.filter((r) => r.id !== old); rebuild(); locked = false; closeSheet(); if (rooms.length) openRoom(rooms[0].id); roomPicker(); return; }
+  } catch (err) { fail("うまくいきませんでした: " + (err.message || err)); }
+});
+$("bFilter").onclick = openFilter;
+$("bSearch").onclick = () => { const r = $("searchRow"); r.classList.toggle("on"); if (r.classList.contains("on")) $("q").focus(); else { q = ""; $("q").value = ""; render(); } };
+$("q").oninput = (e) => { q = e.target.value; render(); };
+
+/* ---------- 起動 ---------- */
+function loginSheet() {
+  openSheet(`<h2>ログイン</h2>
+  <p style="margin-top:0;color:var(--sub);font-size:14px;line-height:1.7">Googleアカウントでログインすると、スマホを変えてもブラウザのデータを消しても、同じデータに戻れます。</p>
+  ${inApp ? `<div class="banner" style="margin:0 0 10px">⚠️ LINEなどのアプリ内ブラウザで開いています。ここだと毎回ログインが必要になります。右上の「…」から<b>「Safariで開く」</b>を選んでください。</div>` : ""}
+  <button class="btn" id="gLogin">Googleでログイン</button>
+  <div class="meta" style="margin:10px 2px">毎回ログインを求められるときは、<b>Safariで開く</b>/プライベートブラウズをやめる/「ホーム画面に追加」して、そのアイコンから開くと、ログインが残りやすくなります。</div>`, true);
+}
+async function googleLogin() {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  try { await signInWithPopup(auth, provider); }
+  catch (e) {
+    if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") await signInWithRedirect(auth, provider);
+    else if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") fail("ログインできませんでした: " + (e.code || e.message));
+  }
+}
+getRedirectResult(auth).catch((e) => fail("ログインできませんでした: " + (e.code || e.message)));
+onAuthStateChanged(auth, (u) => {
+  if (!u) {
+    uid = null; shared = []; priv = []; room = null; rooms = [];
+    if (unsubShared) unsubShared(); if (unsubPriv) unsubPriv(); if (unsubRooms) unsubRooms();
+    rebuild(); loginSheet(); return;
+  }
+  locked = false; closeSheet();
+  uid = u.uid;
+  if (!who && u.displayName) { who = u.displayName.split(/\s/)[0]; ls.set("who", who); }
+  if (unsubPriv) unsubPriv();
+  unsubPriv = onSnapshot(collection(fs, "users", uid, "spots"), (snap) => { priv = snap.docs.map((d) => ({ ...d.data(), id: d.id })); rebuild(); }, () => {});
+  const params = new URLSearchParams(location.search);
+  const urlRoom = params.get("room"), urlName = params.get("n");
+  if (unsubRooms) unsubRooms();
+  let first = true;
+  unsubRooms = onSnapshot(roomsCol(), async (snap) => {
+    rooms = snap.docs.map((d) => ({ id: d.id, name: d.data().name || "共有スペース", createdAt: d.data().createdAt || 0 })).sort((x, y) => x.createdAt - y.createdAt);
+    // 古い形式(15文字以下)のコードは使えないので、一覧から自動で外す
+    rooms.filter((x) => x.id.length < 16).forEach((x) => deleteDoc(doc(roomsCol(), x.id)).catch(() => {}));
+    rooms = rooms.filter((x) => x.id.length >= 16);
+    if (first) {
+      first = false;
+      const saved = ls.get("room", null);
+      if (urlRoom && urlRoom.length >= 16) { if (!rooms.some((r) => r.id === urlRoom)) await addRoom(urlRoom, urlName || "共有スペース"); openRoom(urlRoom); }
+      else if (saved && saved.length >= 16) { if (!rooms.some((r) => r.id === saved)) await addRoom(saved, "ふたりのスペース"); openRoom(saved); }
+      else if (rooms.length) openRoom(rooms[0].id);
+      else roomPicker();
+    } else render();
+  }, () => { const code = urlRoom || ls.get("room", null); if (code) openRoom(code); else roomPicker(); });
+});
+render();
+</script>
+</body>
+</html>
