@@ -21,8 +21,14 @@ jobs:
           } > functions/.env
       - name: Install functions dependencies
         run: npm install --prefix functions
-      - name: Save service account key
-        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_ASIA_NORTHEAST1_40722 }}' > "$RUNNER_TEMP/sa.json"
+      - name: Save and check service account key
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ASIA_NORTHEAST1_40722 }}
+        run: |
+          if [ -z "$SA_JSON" ]; then echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_ASIA_NORTHEAST1_40722 is empty"; exit 1; fi
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+          node -e 'const j=JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/sa.json","utf8")); if(!j.client_email||!j.private_key){throw new Error("JSON has no client_email/private_key (service account key expected)")} console.log("service account:", j.client_email, "project:", j.project_id)' \
+            || { echo "::error::The secret is not a valid service-account JSON key. Paste the whole JSON file contents (from { to })."; exit 1; }
       - name: Deploy (hosting + functions + firestore rules)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
