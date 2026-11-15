@@ -252,6 +252,8 @@ function closeSheet() { if (locked) return; $("ov").classList.remove("on"); $("s
 $("ov").onclick = closeSheet;
 
 /* ---------- 一覧 ---------- */
+const p2 = (n) => String(n).padStart(2, "0");
+const fmtDT = (ms, full) => { const d = new Date(ms); return (full ? d.getFullYear() + "/" : "") + (d.getMonth() + 1) + "/" + d.getDate() + " " + p2(d.getHours()) + ":" + p2(d.getMinutes()); };
 const tagsOf = (s) => (Array.isArray(s.tags) ? s.tags : s.tag ? [s.tag] : []).filter(Boolean);
 const parseTags = (v) => [...new Set(String(v || "").split(/[,、\s#]+/).map((x) => x.trim()).filter(Boolean))].slice(0, 8);
 const normUrl = (u) => String(u || "").split("?")[0].replace(/\/+$/, "").toLowerCase();
@@ -283,7 +285,7 @@ function tileHtml(s) {
 }
 function itemHtml(s) {
   return `<div class="item" data-id="${esc(s.id)}" data-p="${s.private ? 1 : 0}">${tileHtml(s)}<div class="b"><h3>${esc(s.name)}</h3><div class="ad">${esc(s.address || s.memo || "")}</div>
-  <div class="ad" style="font-size:11.5px;opacity:.8">${s.createdAt ? (() => { const d = new Date(s.createdAt); return (d.getMonth() + 1) + "/" + d.getDate() + " 追加" + (s.who ? "・" + esc(s.who) : ""); })() : ""}</div>
+  <div class="ad" style="font-size:11.5px;opacity:.8">${s.createdAt ? fmtDT(s.createdAt) + " 追加" + (s.who ? "・" + esc(s.who) : "") : ""}</div>
   <div class="tags"><span class="tag">${esc(s.cat)}</span>${tagsOf(s).map((x) => `<span class="tag">#${esc(x)}</span>`).join("")}${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}${s.reaction ? `<span class="tag re">${esc(s.reaction)}</span>` : ""}${isNew(s) ? '<span class="tag new">新着</span>' : ""}</div></div></div>`;
 }
 function render() {
@@ -356,7 +358,7 @@ function openDetail(id, p) {
   <h2>${esc(s.name)}</h2>${s.address ? `<div class="meta">${esc(s.address)}</div>` : ""}
   <div class="tags"><span class="tag">${esc(s.cat)}</span>${tagsOf(s).map((x) => `<span class="tag">#${esc(x)}</span>`).join("")}${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}</div>
   ${s.memo ? `<div class="memo">${esc(s.memo)}</div>` : ""}
-  <div class="meta">${s.who ? esc(s.who) + " が追加・" : ""}${s.createdAt ? new Date(s.createdAt).toLocaleDateString("ja-JP") : ""}</div>
+  <div class="meta">${s.who ? esc(s.who) + " が追加・" : ""}${s.createdAt ? fmtDT(s.createdAt, true) : ""}</div>
   <div class="links"><a href="${esc(maps)}" target="_blank" rel="noopener">Googleマップで開く</a>${/^https?:\/\//.test(s.url || "") ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">元の投稿</a>` : ""}</div>
   <div class="lbl">${s.done ? "思い出の記録" : "行ったら記録"}</div>
   <input class="field" type="date" id="dDate" value="${esc(s.visitedAt || today)}">
