@@ -2,6 +2,10 @@
   "hosting": {
     "public": "public",
     "ignore": ["firebase.json", "**/.*"],
+    "headers": [
+      { "source": "**/*.@(html|webmanifest)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+      { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ],
     "rewrites": [
       { "source": "/api/parse", "function": { "functionId": "parse", "region": "us-central1" } }
     ]

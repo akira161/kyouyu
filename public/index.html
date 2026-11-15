@@ -160,7 +160,8 @@ try {
   const sp = new URLSearchParams(location.search);
   const raw = [sp.get("add"), sp.get("url"), sp.get("text")].filter(Boolean).join(" ");
   const m = raw.match(/https?:\/\/[^\s<>"']+/);
-  if (m) ls.set("pendingShare", m[0]);
+  if (m) { ls.set("pendingShare", m[0]); setTimeout(() => { const st = document.getElementById("status"); if (st) st.textContent = "共有されたURLを受け取りました"; }, 300); }
+  else if (sp.has("add") || sp.has("url") || sp.has("text")) setTimeout(() => { const st = document.getElementById("status"); if (st) st.textContent = "共有されたURLが空でした(ショートカットを確認)"; }, 300);
 } catch {}
 const prevSeen = ls.get("lastSeen", 0);
 const markSeen = () => ls.set("lastSeen", Date.now());
