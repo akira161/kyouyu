@@ -147,7 +147,7 @@ const SORTS = { new: "新しい順", old: "古い順", name: "名前順" };
 const safeImg = (u) => (/^https:\/\//.test(u || "") ? u : "");
 
 let shared = [], priv = [], spots = [], uid = null, room = null, unsubShared = null, unsubPriv = null, unsubRooms = null, rooms = [], members = [], meta = null, unsubMem = null, unsubMeta = null;
-let tab = "home", scope = "shared", q = "", fSt = "all", fCat = "all", fRe = "all", sort = "new", who = ls.get("who", "");
+let tab = "home", scope = "shared", q = "", fSt = "all", fCat = "all", fRe = "all", fTag = "all", sort = "new", who = ls.get("who", "");
 let addState = { thumb: "", lat: null, lng: null, mapsUrl: "", isPriv: false, cat: "ごはん", cands: [] };
 const prevSeen = ls.get("lastSeen", 0);
 const markSeen = () => ls.set("lastSeen", Date.now());
@@ -177,6 +177,15 @@ async function addRoom(code, name) {
   if (!rooms.some((r) => r.id === code)) { rooms.push({ id: code, name }); }
   await setDoc(doc(roomsCol(), code), { name, createdAt: Date.now() }, { merge: true });
 }
+async function onRoomGone(code, why) {
+  try { await deleteDoc(doc(roomsCol(), code)); } catch {}
+  rooms = rooms.filter((x) => x.id !== code);
+  if (room !== code) { render(); return; }
+  if (unsubShared) unsubShared(); if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
+  room = null; shared = []; members = []; meta = null; ls.set("room", null); rebuild();
+  locked = false; closeSheet();
+  if (rooms.length) { openRoom(rooms[0].id); fail(why); } else { roomPicker(); fail(why); }
+}
 function openRoom(code) {
   if (code.length < 16) { ls.set("room", null); fail("古い形式のスペースは使えません。新しい招待リンクから入り直してください"); roomPicker(); return; }
   room = code; ls.set("room", code);
@@ -186,7 +195,7 @@ function openRoom(code) {
   if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
   setDoc(doc(fs, "rooms", code, "members", uid), { name: who || "名無し", joinedAt: Date.now() }, { merge: true }).catch((e) => fail("参加者の登録に失敗: " + e.message));
   unsubMem = onSnapshot(collection(fs, "rooms", code, "members"), (s) => { members = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => (x.joinedAt || 0) - (y.joinedAt || 0)); refreshMembers(); }, (e) => fail("参加者を読み込めませんでした: " + e.message));
-  unsubMeta = onSnapshot(doc(fs, "rooms", code), (s) => { meta = s.exists() ? s.data() : null; refreshMembers(); }, () => {});
+  unsubMeta = onSnapshot(doc(fs, "rooms", code), (s) => { meta = s.exists() ? s.data() : null; if (meta && meta.deleted) { onRoomGone(code, "「" + roomName(code) + "」は作成者によって削除されました"); return; } refreshMembers(); }, () => {});
   unsubShared = onSnapshot(sharedCol(), (snap) => { shared = snap.docs.map((d) => ({ ...d.data(), id: d.id, private: false })); rebuild(); }, (e) => fail("読み込めませんでした: " + e.message));
   render();
 }
@@ -237,14 +246,28 @@ function closeSheet() { if (locked) return; $("ov").classList.remove("on"); $("s
 $("ov").onclick = closeSheet;
 
 /* ---------- 一覧 ---------- */
+const tagsOf = (s) => (Array.isArray(s.tags) ? s.tags : s.tag ? [s.tag] : []).filter(Boolean);
+const parseTags = (v) => [...new Set(String(v || "").split(/[,、\s#]+/).map((x) => x.trim()).filter(Boolean))].slice(0, 8);
+const normUrl = (u) => String(u || "").split("?")[0].replace(/\/+$/, "").toLowerCase();
+const dupSpot = (url, name) => { const n = normUrl(url); return n ? spots.find((s) => normUrl(s.url) === n && (name === undefined || s.name === name)) : null; };
+async function ensurePlace(s) {
+  if (s.lat != null || !s.name) return false;
+  try {
+    const { place } = await api({ query: [s.name, s.address].filter(Boolean).join(" ") });
+    if (!place) return false;
+    s.lat = place.lat; s.lng = place.lng; s.mapsUrl = place.mapsUrl || s.mapsUrl || "";
+    if (!s.address) s.address = place.address || "";
+    return true;
+  } catch { return false; }
+}
 const isNew = (s) => s.createdAt > prevSeen && !mineOf(s);
 function visible(forLog) {
   const t = q.trim().toLowerCase();
   const a = spots.filter((s) =>
     (forLog || (scope === "priv" ? !!s.private : !s.private)) &&
     (forLog ? !!s.done : (fSt === "all" || (fSt === "done") === !!s.done)) &&
-    (fCat === "all" || s.cat === fCat) && (fRe === "all" || s.reaction === fRe) &&
-    (!t || [s.name, s.address, s.memo, s.tag ? "#" + s.tag : ""].join(" ").toLowerCase().includes(t)));
+    (fCat === "all" || s.cat === fCat) && (fRe === "all" || s.reaction === fRe) && (fTag === "all" || tagsOf(s).includes(fTag)) &&
+    (!t || [s.name, s.address, s.memo, ...tagsOf(s).map((x) => "#" + x)].join(" ").toLowerCase().includes(t)));
   const by = { new: (x, y) => (y.createdAt || 0) - (x.createdAt || 0), old: (x, y) => (x.createdAt || 0) - (y.createdAt || 0), name: (x, y) => String(x.name).localeCompare(String(y.name), "ja") };
   return a.sort(by[sort]);
 }
@@ -255,14 +278,14 @@ function tileHtml(s) {
 function itemHtml(s) {
   return `<div class="item" data-id="${esc(s.id)}" data-p="${s.private ? 1 : 0}">${tileHtml(s)}<div class="b"><h3>${esc(s.name)}</h3><div class="ad">${esc(s.address || s.memo || "")}</div>
   <div class="ad" style="font-size:11.5px;opacity:.8">${s.createdAt ? (() => { const d = new Date(s.createdAt); return (d.getMonth() + 1) + "/" + d.getDate() + " 追加" + (s.who ? "・" + esc(s.who) : ""); })() : ""}</div>
-  <div class="tags"><span class="tag">${esc(s.cat)}</span>${s.tag ? `<span class="tag">#${esc(s.tag)}</span>` : ""}${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}${s.reaction ? `<span class="tag re">${esc(s.reaction)}</span>` : ""}${isNew(s) ? '<span class="tag new">新着</span>' : ""}</div></div></div>`;
+  <div class="tags"><span class="tag">${esc(s.cat)}</span>${tagsOf(s).map((x) => `<span class="tag">#${esc(x)}</span>`).join("")}${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}${s.reaction ? `<span class="tag re">${esc(s.reaction)}</span>` : ""}${isNew(s) ? '<span class="tag new">新着</span>' : ""}</div></div></div>`;
 }
 function render() {
   document.querySelectorAll("#nav button[data-t]").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
   [...$("scope").children].forEach((b) => b.classList.toggle("on", b.dataset.v === scope));
   $("scope").children[0].textContent = "👫 " + (room ? roomName(room) : "共有");
   $("scope").style.display = tab === "log" ? "none" : "flex";
-  $("bFilter").classList.toggle("act", fSt !== "all" || fCat !== "all" || fRe !== "all" || sort !== "new");
+  $("bFilter").classList.toggle("act", fSt !== "all" || fCat !== "all" || fRe !== "all" || fTag !== "all" || sort !== "new");
   $("status").textContent = room ? `共有 ${shared.length}件 ・ 自分だけ ${priv.length}件` : "";
   $("mapWrap").style.display = tab === "map" ? "block" : "none";
   $("main").style.display = tab === "map" ? "none" : "block";
@@ -325,7 +348,7 @@ function openDetail(id, p) {
   const im = safeImg(s.thumb);
   openSheet(`${im ? `<img class="hero" src="${esc(im)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
   <h2>${esc(s.name)}</h2>${s.address ? `<div class="meta">${esc(s.address)}</div>` : ""}
-  <div class="tags"><span class="tag">${esc(s.cat)}</span>${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}</div>
+  <div class="tags"><span class="tag">${esc(s.cat)}</span>${tagsOf(s).map((x) => `<span class="tag">#${esc(x)}</span>`).join("")}${s.private ? '<span class="tag pv">🔒 自分だけ</span>' : ""}${s.done ? '<span class="tag done">行った</span>' : ""}</div>
   ${s.memo ? `<div class="memo">${esc(s.memo)}</div>` : ""}
   <div class="meta">${s.who ? esc(s.who) + " が追加・" : ""}${s.createdAt ? new Date(s.createdAt).toLocaleDateString("ja-JP") : ""}</div>
   <div class="links"><a href="${esc(maps)}" target="_blank" rel="noopener">Googleマップで開く</a>${/^https?:\/\//.test(s.url || "") ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">元の投稿</a>` : ""}</div>
@@ -336,8 +359,26 @@ function openDetail(id, p) {
     <button class="btn" id="dDone">${s.done ? "記録を更新" : "行った!にする"}</button>
     ${s.done ? `<button class="btn soft" id="dUndo">行きたいに戻す</button>` : ""}
     ${s.private ? `<button class="btn soft" id="dShare">👫 ふたりに共有する</button>` : mineOf(s) ? `<button class="btn soft" id="dPriv">🔒 自分だけにする</button>` : ""}
+    <button class="btn soft" id="dEdit">✏️ 編集する</button>
     <button class="btn warn" id="dDel">削除</button>
   </div>`);
+}
+
+/* ---------- 編集 ---------- */
+let editState = null;
+function openEdit(s) {
+  editState = { id: s.id, p: !!s.private, cat: s.cat, lat: s.lat ?? null, lng: s.lng ?? null, mapsUrl: s.mapsUrl || "" };
+  openSheet(`<h2>編集</h2>
+  <div class="row"><input class="field" id="eName" value="${esc(s.name)}" placeholder="場所の名前" style="flex:3"><button class="btn soft" id="eFind" style="flex:1;margin:0;padding:10px">検索</button></div>
+  <div class="meta" id="eMsg" style="margin:6px 2px;min-height:1.2em;color:var(--accent)"></div>
+  <input class="field" id="eAddr" value="${esc(s.address || "")}" placeholder="住所">
+  <textarea class="field" id="eMemo" rows="6" placeholder="メモ">${esc(s.memo || "")}</textarea>
+  <div class="lbl">カテゴリ</div>
+  <div class="chips" id="eCat">${CATS.map((c) => `<span class="chip ${c === s.cat ? "on" : ""}" data-c="${c}">${ICON[c][0]} ${c}</span>`).join("")}</div>
+  <div class="lbl">タグ(カンマ区切り)</div>
+  <input class="field" id="eTags" value="${esc(tagsOf(s).join(", "))}" placeholder="例: ネタ, あとで見る">
+  <button class="btn" id="eSave">保存する</button>
+  <button class="btn soft" id="eCancel">キャンセル</button>`);
 }
 
 /* ---------- 追加 ---------- */
@@ -357,6 +398,8 @@ function openAdd() {
   </div>
   <div class="lbl">カテゴリ</div>
   <div class="chips" id="aCat">${CATS.map((c) => `<span class="chip ${c === addState.cat ? "on" : ""}" data-c="${c}">${ICON[c][0]} ${c}</span>`).join("")}</div>
+  <div class="lbl">タグ(自由に・カンマ区切り)</div>
+  <input class="field" id="aTags" placeholder="例: ネタ, あとで見る, 記念日">
   <div class="lbl">見られる人</div>
   <div class="chips" id="aVis"><span class="chip ${addState.isPriv ? "" : "on"}" data-p="0">👫 ふたりで共有</span><span class="chip ${addState.isPriv ? "on" : ""}" data-p="1">🔒 自分だけ</span></div>
   <button class="btn" id="aSave">追加する</button>
@@ -433,6 +476,7 @@ function openFilter() {
   <div class="lbl" style="margin-top:0">ステータス</div>${chipRow("st", [["all", "すべて"], ["want", "行きたい"], ["done", "行った"]], fSt)}
   <div class="lbl">カテゴリ</div>${chipRow("cat", [["all", "すべて"], ...CATS.map((c) => [c, ICON[c][0] + " " + c])], fCat)}
   <div class="lbl">リアクション</div>${chipRow("re", [["all", "すべて"], ...REACT.map((r) => [r, r])], fRe)}
+  ${(() => { const all = [...new Set(spots.flatMap(tagsOf))]; return all.length ? `<div class="lbl">タグ</div>${chipRow("tag", [["all", "すべて"], ...all.map((x) => [x, "#" + x])], fTag)}` : ""; })()}
   <div class="lbl">並び順</div>${chipRow("sort", Object.entries(SORTS), sort)}
   <div class="row"><button class="btn soft" id="fReset">リセット</button><button class="btn" id="fOk">表示する</button></div>`);
 }
@@ -493,23 +537,59 @@ document.addEventListener("click", async (e) => {
       if (!picks.length) { fail("追加する場所を選んでください"); return; }
       t.disabled = true; t.textContent = "追加しています…";
       const url = $("aUrl").value.trim(), now = Date.now();
-      for (let i = 0; i < picks.length; i++) {
-        const c = picks[i];
-        await save({ id: crypto.randomUUID(), name: c.name, address: c.address || "", url, memo: [c.memo, addState.caption].filter(Boolean).join("\n\n"), cat: CATS.includes(c.cat) ? c.cat : addState.cat, who, done: false, createdAt: now + i, private: addState.isPriv, thumb: addState.thumb, lat: c.lat, lng: c.lng, mapsUrl: c.mapsUrl || "" });
+      const fresh = picks.filter((c) => !dupSpot(url, c.name));
+      if (!fresh.length) { fail("選んだ場所は、すでに保存されています"); t.disabled = false; t.textContent = "選んだ場所をまとめて追加"; return; }
+      const skipped = picks.length - fresh.length;
+      for (let i = 0; i < fresh.length; i++) {
+        const c = fresh[i];
+        await save({ id: crypto.randomUUID(), name: c.name, address: c.address || "", url, memo: [c.memo, addState.caption].filter(Boolean).join("\n\n"), cat: CATS.includes(c.cat) ? c.cat : addState.cat, tags: parseTags($("aTags").value), who, done: false, createdAt: now + i, private: addState.isPriv, thumb: addState.thumb, lat: c.lat, lng: c.lng, mapsUrl: c.mapsUrl || "" });
       }
-      closeSheet(); tab = "home"; scope = addState.isPriv ? "priv" : "shared"; render(); return;
+      closeSheet(); tab = "home"; scope = addState.isPriv ? "priv" : "shared"; render();
+      if (skipped) fail(skipped + "件は、すでに保存済みのため追加しませんでした");
+      return;
     }
     if (t.id === "aSaveClip") {
       const url = $("aUrl").value.trim(); if (!url) { fail("URLを貼ってください"); $("aUrl").focus(); return; }
       const cap = (addState.caption || $("aMemo").value || "").trim();
       const name = $("aName").value.trim() || fallbackName();
-      const s = { id: crypto.randomUUID(), name, address: "", url, memo: $("aMemo").value.trim() || cap, cat: "その他", tag: "ネタ", who, done: false, createdAt: Date.now(), private: addState.isPriv, thumb: addState.thumb, lat: null, lng: null, mapsUrl: "" };
+      const d0 = dupSpot(url); if (d0 && !confirm("この投稿は「" + d0.name + "」としてすでに保存されています。それでも追加しますか?")) return;
+      const tg = parseTags($("aTags").value); if (!tg.length) tg.push("ネタ");
+      const s = { id: crypto.randomUUID(), name, address: "", url, memo: $("aMemo").value.trim() || cap, cat: "その他", tags: tg, who, done: false, createdAt: Date.now(), private: addState.isPriv, thumb: addState.thumb, lat: null, lng: null, mapsUrl: "" };
       t.disabled = true; await save(s); closeSheet(); tab = "home"; scope = s.private ? "priv" : "shared"; render(); return;
     }
     if (t.id === "aSave") {
-      const name = $("aName").value.trim() || fallbackName();
-      const s = { id: crypto.randomUUID(), name, address: $("aAddr").value.trim(), url: $("aUrl").value.trim(), memo: $("aMemo").value.trim(), cat: addState.cat, who, done: false, createdAt: Date.now(), private: addState.isPriv, thumb: addState.thumb, lat: addState.lat, lng: addState.lng, mapsUrl: addState.mapsUrl };
-      await save(s); closeSheet(); tab = "home"; scope = s.private ? "priv" : "shared"; render(); return;
+      const typed = $("aName").value.trim(), name = typed || fallbackName();
+      const url0 = $("aUrl").value.trim();
+      const d1 = dupSpot(url0, name); if (d1 && !confirm("「" + d1.name + "」はこの投稿からすでに保存されています。それでも追加しますか?")) return;
+      const s = { id: crypto.randomUUID(), name, address: $("aAddr").value.trim(), url: url0, memo: $("aMemo").value.trim(), cat: addState.cat, tags: parseTags($("aTags").value), who, done: false, createdAt: Date.now(), private: addState.isPriv, thumb: addState.thumb, lat: addState.lat, lng: addState.lng, mapsUrl: addState.mapsUrl };
+      t.disabled = true;
+      let found = true;
+      if (typed && s.lat == null) { t.textContent = "地図の位置を探しています…"; found = await ensurePlace(s); }
+      await save(s); closeSheet(); tab = "home"; scope = s.private ? "priv" : "shared"; render();
+      if (typed && !found) fail("地図の位置が見つからなかったため、地図には出ません。編集から「検索」で補えます");
+      return;
+    }
+    // 編集
+    if (t.closest("#eCat") && t.dataset.c) { editState.cat = t.dataset.c; [...$("eCat").children].forEach((c) => c.classList.toggle("on", c === t)); return; }
+    if (t.id === "eCancel") { closeSheet(); return; }
+    if (t.id === "eFind") {
+      const nm = $("eName").value.trim(); if (!nm) { $("eName").focus(); return; }
+      t.disabled = true; t.textContent = "…";
+      try {
+        const { place } = await api({ query: nm });
+        if (place) { $("eName").value = place.placeName || nm; $("eAddr").value = place.address || ""; Object.assign(editState, { lat: place.lat, lng: place.lng, mapsUrl: place.mapsUrl || "" }); $("eMsg").textContent = "場所が見つかりました"; }
+        else $("eMsg").textContent = "見つかりませんでした";
+      } catch (e) { $("eMsg").textContent = "検索できませんでした(" + e.message + ")"; }
+      t.disabled = false; t.textContent = "検索"; return;
+    }
+    if (t.id === "eSave") {
+      const old = find(editState.id, editState.p); if (!old) { closeSheet(); return; }
+      const name = $("eName").value.trim() || old.name;
+      const s = { ...old, name, address: $("eAddr").value.trim(), memo: $("eMemo").value.trim(), cat: editState.cat, tags: parseTags($("eTags").value), lat: editState.lat, lng: editState.lng, mapsUrl: editState.mapsUrl };
+      delete s.tag;
+      t.disabled = true; t.textContent = "保存しています…";
+      if (s.lat == null && (s.name !== old.name || s.address !== old.address)) await ensurePlace(s);
+      await save(s); closeSheet(); render(); return;
     }
     // 詳細
     if (t.closest("#dRe") && t.dataset.r) { const on = t.classList.contains("on"); [...$("dRe").children].forEach((c) => c.classList.remove("on")); if (!on) t.classList.add("on"); return; }
@@ -519,13 +599,14 @@ document.addEventListener("click", async (e) => {
       if (t.id === "dDone") { const r = $("dRe").querySelector(".on"); await save({ ...s, done: true, visitedAt: $("dDate").value || "", reaction: r ? r.dataset.r : "" }); closeSheet(); }
       else if (t.id === "dUndo") { await save({ ...s, done: false }); closeSheet(); }
       else if (t.id === "dShare" || t.id === "dPriv") { await moveSpot(s, t.id === "dPriv"); closeSheet(); }
+      else if (t.id === "dEdit") { openEdit(s); }
       else if (t.id === "dDel") { if (t.dataset.armed) { await remove(s); closeSheet(); } else { t.dataset.armed = "1"; t.textContent = "もう一度押すと削除します"; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ""; t.textContent = "削除"; } }, 3000); } }
       return;
     }
     // 絞り込み
     const row = t.closest(".chips[data-k]");
-    if (row && t.dataset.v !== undefined) { const k = row.dataset.k, v = t.dataset.v; if (k === "st") fSt = v; if (k === "cat") fCat = v; if (k === "re") fRe = v; if (k === "sort") sort = v; [...row.children].forEach((c) => c.classList.toggle("on", c === t)); render(); return; }
-    if (t.id === "fReset") { fSt = fCat = fRe = "all"; sort = "new"; render(); openFilter(); return; }
+    if (row && t.dataset.v !== undefined) { const k = row.dataset.k, v = t.dataset.v; if (k === "st") fSt = v; if (k === "cat") fCat = v; if (k === "re") fRe = v; if (k === "tag") fTag = v; if (k === "sort") sort = v; [...row.children].forEach((c) => c.classList.toggle("on", c === t)); render(); return; }
+    if (t.id === "fReset") { fSt = fCat = fRe = fTag = "all"; sort = "new"; render(); openFilter(); return; }
     if (t.id === "fOk") { closeSheet(); return; }
     // 設定
     if (t.id === "gLogin") { googleLogin(); return; }
@@ -539,7 +620,7 @@ document.addEventListener("click", async (e) => {
       const items = [...shared]; shared = [];
       for (const s of items) await deleteDoc(doc(fs, "rooms", old, "spots", s.id));
       await deleteDoc(doc(fs, "rooms", old, "members", uid)).catch(() => {});
-      await deleteDoc(doc(fs, "rooms", old)).catch(() => {});
+      await setDoc(doc(fs, "rooms", old), { deleted: true, deletedAt: Date.now() }, { merge: true }).catch(() => {});
       await deleteDoc(doc(roomsCol(), old));
       rooms = rooms.filter((r) => r.id !== old); room = null; ls.set("room", null);
       rebuild(); locked = false; closeSheet();
@@ -548,7 +629,7 @@ document.addEventListener("click", async (e) => {
     }
     if (t.id === "sInvite") { inviteSheet(room); return; }
     if (t.id === "sCopy") { await navigator.clipboard.writeText(inviteLink(room)); t.textContent = "コピーしました"; return; }
-    if (t.id === "sLeave") { const old = room; if (unsubShared) unsubShared(); ls.set("room", null); room = null; shared = []; await deleteDoc(doc(roomsCol(), old)); rooms = rooms.filter((r) => r.id !== old); rebuild(); locked = false; closeSheet(); if (rooms.length) openRoom(rooms[0].id); roomPicker(); return; }
+    if (t.id === "sLeave") { const old = room; await deleteDoc(doc(fs, "rooms", old, "members", uid)).catch(() => {}); if (unsubShared) unsubShared(); ls.set("room", null); room = null; shared = []; await deleteDoc(doc(roomsCol(), old)); rooms = rooms.filter((r) => r.id !== old); rebuild(); locked = false; closeSheet(); if (rooms.length) openRoom(rooms[0].id); roomPicker(); return; }
   } catch (err) { fail("うまくいきませんでした: " + (err.message || err)); }
 });
 $("bFilter").onclick = openFilter;
