@@ -155,6 +155,13 @@ const safeImg = (u) => (/^https:\/\//.test(u || "") ? u : "");
 let shared = [], priv = [], spots = [], uid = null, room = null, unsubShared = null, unsubPriv = null, unsubRooms = null, rooms = [], members = [], meta = null, unsubMem = null, unsubMeta = null;
 let tab = "home", scope = "shared", q = "", fSt = "all", fCat = "all", fRe = "all", fTag = "all", sort = "new", who = ls.get("who", "");
 let addState = { thumb: "", lat: null, lng: null, mapsUrl: "", isPriv: false, cat: "ごはん", cands: [] };
+// 共有ボタン・ショートカットから渡されたURL(?add= / ?url= / ?text=)を覚えておく
+try {
+  const sp = new URLSearchParams(location.search);
+  const raw = [sp.get("add"), sp.get("url"), sp.get("text")].filter(Boolean).join(" ");
+  const m = raw.match(/https?:\/\/[^\s<>"']+/);
+  if (m) ls.set("pendingShare", m[0]);
+} catch {}
 const prevSeen = ls.get("lastSeen", 0);
 const markSeen = () => ls.set("lastSeen", Date.now());
 document.addEventListener("visibilitychange", () => document.hidden && markSeen());
@@ -192,6 +199,13 @@ async function onRoomGone(code, why) {
   locked = false; closeSheet();
   if (rooms.length) { openRoom(rooms[0].id); fail(why); } else { roomPicker(); fail(why); }
 }
+function handleShare() {
+  const u = ls.get("pendingShare", null); if (!u) return;
+  ls.set("pendingShare", null);
+  locked = false; openAdd();
+  $("aUrl").value = u;
+  autofill();
+}
 function openRoom(code) {
   if (code.length < 16) { ls.set("room", null); fail("古い形式のスペースは使えません。新しい招待リンクから入り直してください"); roomPicker(); return; }
   room = code; ls.set("room", code);
@@ -204,6 +218,7 @@ function openRoom(code) {
   unsubMeta = onSnapshot(doc(fs, "rooms", code), (s) => { meta = s.exists() ? s.data() : null; if (meta && meta.deleted) { onRoomGone(code, "「" + roomName(code) + "」は作成者によって削除されました"); return; } refreshMembers(); }, () => {});
   unsubShared = onSnapshot(sharedCol(), (snap) => { shared = snap.docs.map((d) => ({ ...d.data(), id: d.id, private: false })); rebuild(); }, (e) => fail("読み込めませんでした: " + e.message));
   render();
+  setTimeout(handleShare, 400);
 }
 function roomPicker() {
   const list = rooms.map((r) => `<div class="cand" style="cursor:default"><div style="flex:1"><b>${esc(r.name)}</b>${r.id === room ? ' <span class="meta">(表示中)</span>' : ""}</div>
@@ -395,6 +410,7 @@ function openAdd() {
   openSheet(`<h2>行きたい場所を追加</h2>
   <div class="lbl" style="margin-top:0">SNSのURLから自動入力</div>
   <div class="row"><input class="field" id="aUrl" type="url" placeholder="TikTokなどのURLを貼る" style="flex:3"><button class="btn soft" id="aAuto" style="flex:1;margin:0;padding:10px">読込</button></div>
+  <button class="btn soft" id="aPaste" style="margin-top:8px">📋 コピーしたURLを貼り付けて読込</button>
   <div class="meta" id="aMsg" style="margin:8px 2px;min-height:1.2em;color:var(--accent)"></div>
   <div id="aCands"></div>
   <button class="btn soft" id="aFromMemo">📝 メモの内容から場所を読み取る</button>
@@ -538,6 +554,15 @@ document.addEventListener("click", async (e) => {
     if (t.closest("#aCat") && t.dataset.c) { addState.cat = t.dataset.c; [...$("aCat").children].forEach((c) => c.classList.toggle("on", c === t)); return; }
     if (t.closest("#aVis") && t.dataset.p) { addState.isPriv = t.dataset.p === "1"; [...$("aVis").children].forEach((c) => c.classList.toggle("on", c === t)); return; }
     if (t.id === "aAuto") { autofill(); return; }
+    if (t.id === "aPaste") {
+      try {
+        const tx = await navigator.clipboard.readText();
+        const m = (tx || "").match(/https?:\/\/[^\s<>"']+/);
+        if (!m) { fail("コピーしたURLが見つかりません。先にSNSで「リンクをコピー」してください"); return; }
+        $("aUrl").value = m[0]; autofill();
+      } catch { fail("貼り付けを許可してください(許可されない場合は、URL欄に手で貼り付けてください)"); }
+      return;
+    }
     if (t.id === "aFind") { findPlaceUi(); return; }
     if (t.id === "aFromMemo") { const tx = $("aMemo").value.trim(); if (!tx) { fail("メモが空です"); return; } const keep = $("aMemo").value; await runParse({ text: tx, url: $("aUrl").value.trim() }, t, "📝 メモの内容から場所を読み取る"); $("aMemo").value = keep; return; }
     if (t.id === "aSaveMany") {
