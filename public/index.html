@@ -158,7 +158,7 @@ const REACT = ["イマイチ", "良いね", "また行きたい"];
 const SORTS = { new: "新しい順", old: "古い順", name: "名前順" };
 const safeImg = (u) => (/^https:\/\//.test(u || "") ? u : "");
 
-let shared = [], priv = [], spots = [], uid = null, room = null, unsubShared = null, unsubPriv = null, unsubRooms = null, rooms = [], members = [], meta = null, unsubMem = null, unsubMeta = null;
+let shared = [], priv = [], spots = [], uid = null, room = null, unsubShared = null, unsubPriv = null, unsubRooms = null, rooms = [], members = [], meta = null, unsubMem = null, unsubMeta = null, dates = [], unsubDates = null;
 let tab = "home", scope = "shared", q = "", fSt = "all", fCat = "all", fRe = "all", fTag = "all", sort = "new", who = ls.get("who", "");
 let addState = { thumb: "", lat: null, lng: null, mapsUrl: "", isPriv: false, cat: "ごはん", cands: [] };
 // 共有ボタン・ショートカットから渡されたURL(?add= / ?url= / ?text=)を覚えておく
@@ -201,7 +201,7 @@ async function onRoomGone(code, why) {
   try { await deleteDoc(doc(roomsCol(), code)); } catch {}
   rooms = rooms.filter((x) => x.id !== code);
   if (room !== code) { render(); return; }
-  if (unsubShared) unsubShared(); if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
+  if (unsubShared) unsubShared(); if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta(); if (unsubDates) unsubDates(); dates = [];
   room = null; shared = []; members = []; meta = null; ls.set("room", null); rebuild();
   locked = false; closeSheet();
   if (rooms.length) { openRoom(rooms[0].id); fail(why); } else { roomPicker(); fail(why); }
@@ -226,7 +226,8 @@ function openRoom(code) {
   history.replaceState(null, "", location.pathname);
   if (unsubShared) unsubShared();
   shared = []; members = []; meta = null; rebuild();
-  if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
+  if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta(); if (unsubDates) unsubDates(); dates = [];
+  unsubDates = onSnapshot(collection(fs, "rooms", code, "dates"), (sn) => { dates = sn.docs.map((d) => ({ id: d.id, ...d.data() })); render(); }, () => {});
   setDoc(doc(fs, "rooms", code, "members", uid), { name: who || "名無し", joinedAt: Date.now() }, { merge: true }).catch((e) => fail("参加者の登録に失敗: " + e.message));
   unsubMem = onSnapshot(collection(fs, "rooms", code, "members"), (s) => { members = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => (x.joinedAt || 0) - (y.joinedAt || 0)); refreshMembers(); }, (e) => fail("参加者を読み込めませんでした: " + e.message));
   unsubMeta = onSnapshot(doc(fs, "rooms", code), (s) => { meta = s.exists() ? s.data() : null; if (meta && meta.deleted) { onRoomGone(code, "「" + roomName(code) + "」は作成者によって削除されました"); return; } refreshMembers(); }, () => {});
@@ -335,9 +336,16 @@ function render() {
     h += a.length ? a.map(itemHtml).join("") : `<div class="empty"><b>🗺️</b>${spots.length ? "条件に合う場所がありません" : "まだ何もありません"}<br>下の ＋ から行きたい場所を追加しましょう</div>`;
   } else {
     const a = visible(true).sort((x, y) => String(y.visitedAt || "").localeCompare(String(x.visitedAt || "")));
-    if (!a.length) h = `<div class="empty"><b>📔</b>行った場所がここに並びます<br>場所を開いて「行った!」を記録しましょう</div>`;
+    const inF = new Set();
+    if (room) h += `<button class="btn soft" id="dtNew" style="margin:12px 0 0">📁 デートのフォルダを作る</button>`;
+    h += dates.slice().sort((x, y) => String(y.date || "").localeCompare(String(x.date || ""))).map((d) => {
+      const ss = shared.filter((x) => x.dateId === d.id); ss.forEach((x) => inF.add(x.id));
+      return `<div class="month dhead" data-did="${esc(d.id)}" style="cursor:pointer">📁 ${esc(d.title)} <span class="meta">${esc(d.date || "")}・${ss.length}件 ✏️</span></div>` + (ss.length ? ss.map(itemHtml).join("") : `<div class="meta" style="margin:6px 2px">まだ空です。場所を開いて「デートに入れる」を押してください</div>`);
+    }).join("");
+    const rest = a.filter((x) => !inF.has(x.id));
+    if (!rest.length && !dates.length) h = `<div class="empty"><b>📔</b>行った場所がここに並びます<br>場所を開いて「行った!」を記録しましょう</div>`;
     let cur = "";
-    a.forEach((s) => { const m = (s.visitedAt || "").slice(0, 7) || "日付なし"; if (m !== cur) { cur = m; h += `<div class="month">${m === "日付なし" ? m : m.replace("-", "年") + "月"}</div>`; } h += itemHtml(s); });
+    rest.forEach((s) => { const m = (s.visitedAt || "").slice(0, 7) || "日付なし"; if (m !== cur) { cur = m; h += `<div class="month">${m === "日付なし" ? m : m.replace("-", "年") + "月"}</div>`; } h += itemHtml(s); });
   }
   $("main").innerHTML = h;
 }
@@ -398,9 +406,35 @@ function openDetail(id, p) {
     <button class="btn" id="dDone">${s.done ? "記録を更新" : "行った!にする"}</button>
     ${s.done ? `<button class="btn soft" id="dUndo">行きたいに戻す</button>` : ""}
     ${s.private ? `<button class="btn soft" id="dShare">👫 ふたりに共有する</button>` : mineOf(s) ? `<button class="btn soft" id="dPriv">🔒 自分だけにする</button>` : ""}
+    ${!s.private && room ? `<button class="btn soft" id="dDate">📁 ${s.dateId && dates.some((d) => d.id === s.dateId) ? "デートのフォルダを変更" : "デートのフォルダに入れる"}</button>` : ""}
+    ${rooms.filter((r) => s.private || r.id !== room).length ? `<button class="btn soft" id="dRoom">🔀 別のスペースへコピー/移動</button>` : ""}
     <button class="btn soft" id="dEdit">✏️ 編集する</button>
     <button class="btn warn" id="dDel">削除</button>
   </div>`);
+}
+
+/* ---------- デートのフォルダ / スペース間コピー ---------- */
+function datePicker(s) {
+  const list = dates.slice().sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
+  openSheet(`<h2>デートのフォルダ</h2><div class="meta" style="margin-bottom:8px">「${esc(s.name)}」を入れるフォルダを選びます</div>
+  ${list.map((d) => `<div class="cand" data-dp="${esc(d.id)}" data-sid="${esc(s.id)}"><div style="flex:1"><b>📁 ${esc(d.title)}</b> <span class="meta">${esc(d.date || "")}</span>${s.dateId === d.id ? ' <span class="meta">(いま入っています)</span>' : ""}</div></div>`).join("")}
+  <button class="btn" data-dp="new" data-sid="${esc(s.id)}">＋ 新しいデートのフォルダ</button>
+  ${s.dateId ? `<button class="btn soft" data-dp="none" data-sid="${esc(s.id)}">フォルダから出す</button>` : ""}`);
+}
+function dateForm(d, s) {
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  openSheet(`<h2>${d ? "デートのフォルダを編集" : "デートのフォルダを作る"}</h2>
+  <div class="lbl" style="margin-top:0">名前</div><input class="field" id="dfTitle" value="${esc(d ? d.title : "")}" placeholder="例:渋谷デート">
+  <div class="lbl">日付</div><input class="field" type="date" id="dfDate" value="${esc(d ? d.date || today : (s && s.visitedAt) || today)}">
+  <button class="btn" id="dfSave" ${d ? `data-id="${esc(d.id)}" data-created="${d.createdAt || ""}"` : ""} ${s ? `data-sid="${esc(s.id)}"` : ""}>保存</button>
+  ${d ? `<button class="btn warn" id="dfDel" data-id="${esc(d.id)}">このフォルダを削除</button>` : ""}`);
+}
+function roomMoveSheet(s) {
+  const tg = rooms.filter((r) => s.private || r.id !== room);
+  openSheet(`<h2>別のスペースへ</h2><div class="meta" style="margin-bottom:8px">「${esc(s.name)}」を送るスペースを選びます${s.private ? "(自分だけの場所は、共有スペースに公開されます)" : ""}</div>
+  ${tg.map((r) => `<div class="cand" style="cursor:default"><div style="flex:1"><b>${esc(r.name)}</b></div>
+    <button class="btn soft" style="width:auto;margin:0 6px 0 0;padding:8px 12px" data-rm="copy" data-to="${esc(r.id)}" data-sid="${esc(s.id)}" data-p="${s.private ? 1 : 0}">コピー</button>
+    <button class="btn soft" style="width:auto;margin:0;padding:8px 12px" data-rm="move" data-to="${esc(r.id)}" data-sid="${esc(s.id)}" data-p="${s.private ? 1 : 0}">移動</button></div>`).join("")}`);
 }
 
 /* ---------- 編集 ---------- */
@@ -640,6 +674,36 @@ document.addEventListener("click", async (e) => {
       if (s.lat == null && (s.name !== old.name || s.address !== old.address)) await ensurePlace(s);
       await save(s); closeSheet(); render(); return;
     }
+    // デートのフォルダ・スペース間コピー
+    if (t.id === "dtNew") { dateForm(null, null); return; }
+    const dh = t.closest(".dhead[data-did]"); if (dh) { const d = dates.find((x) => x.id === dh.dataset.did); if (d) dateForm(d, null); return; }
+    const dp = t.closest("[data-dp]");
+    if (dp) {
+      const s = find(dp.dataset.sid, false); if (!s) return;
+      if (dp.dataset.dp === "new") { dateForm(null, s); return; }
+      const { dateId, ...rest } = s; await save(dp.dataset.dp === "none" ? { ...rest, private: false } : { ...s, dateId: dp.dataset.dp }); locked = false; closeSheet(); return;
+    }
+    if (t.id === "dfSave") {
+      const title = $("dfTitle").value.trim() || "デート", date = $("dfDate").value || "";
+      const id = t.dataset.id || crypto.randomUUID();
+      await setDoc(doc(fs, "rooms", room, "dates", id), { title: title.slice(0, 30), date, createdAt: Number(t.dataset.created) || Date.now(), by: uid }, { merge: true });
+      if (t.dataset.sid) { const s = find(t.dataset.sid, false); if (s) await save({ ...s, dateId: id }); }
+      locked = false; closeSheet(); return;
+    }
+    if (t.id === "dfDel") {
+      if (!t.dataset.armed) { t.dataset.armed = "1"; t.textContent = "もう一度押すと削除(中の場所は残ります)"; return; }
+      const id = t.dataset.id; for (const x of shared.filter((y) => y.dateId === id)) { const { dateId, ...rest } = x; await save(rest); }
+      await deleteDoc(doc(fs, "rooms", room, "dates", id)); locked = false; closeSheet(); return;
+    }
+    const rm = t.closest("[data-rm]");
+    if (rm) {
+      const s = find(rm.dataset.sid, rm.dataset.p === "1"); if (!s) return;
+      const target = rm.dataset.to, move = rm.dataset.rm === "move";
+      const { id, dateId, ...rest } = s;
+      await setDoc(doc(collection(fs, "rooms", target, "spots"), crypto.randomUUID()), { ...clean(rest), private: false, by: s.by || uid, who: s.who || who, createdAt: s.createdAt || Date.now() });
+      if (move) await remove(s);
+      locked = false; closeSheet(); fail((move ? "移動しました:" : "コピーしました:") + roomName(target)); return;
+    }
     // 詳細
     if (t.closest("#dRe") && t.dataset.r) { const on = t.classList.contains("on"); [...$("dRe").children].forEach((c) => c.classList.remove("on")); if (!on) t.classList.add("on"); return; }
     const st = t.closest(".stack[data-id]");
@@ -649,6 +713,8 @@ document.addEventListener("click", async (e) => {
       else if (t.id === "dUndo") { await save({ ...s, done: false }); closeSheet(); }
       else if (t.id === "dShare" || t.id === "dPriv") { await moveSpot(s, t.id === "dPriv"); closeSheet(); }
       else if (t.id === "dEdit") { openEdit(s); }
+      else if (t.id === "dDate") { datePicker(s); }
+      else if (t.id === "dRoom") { roomMoveSheet(s); }
       else if (t.id === "dDel") { if (t.dataset.armed) { await remove(s); closeSheet(); } else { t.dataset.armed = "1"; t.textContent = "もう一度押すと削除します"; setTimeout(() => { if (t.isConnected) { t.dataset.armed = ""; t.textContent = "削除"; } }, 3000); } }
       return;
     }
@@ -665,7 +731,7 @@ document.addEventListener("click", async (e) => {
       const old = room, nm = roomName(old);
       if (!confirm("「" + nm + "」を削除します。中のスポット " + shared.length + "件もすべて消えて、元に戻せません。よろしいですか?")) return;
       t.disabled = true; t.textContent = "削除しています…";
-      if (unsubShared) unsubShared(); if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta();
+      if (unsubShared) unsubShared(); if (unsubMem) unsubMem(); if (unsubMeta) unsubMeta(); if (unsubDates) unsubDates(); dates = [];
       const items = [...shared]; shared = [];
       for (const s of items) await deleteDoc(doc(fs, "rooms", old, "spots", s.id));
       await deleteDoc(doc(fs, "rooms", old, "members", uid)).catch(() => {});
