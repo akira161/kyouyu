@@ -769,6 +769,24 @@ async function googleLogin() {
   }
 }
 getRedirectResult(auth).catch((e) => fail("ログインできませんでした: " + (e.code || e.message)));
+/* ---------- 自動アップデート(ホーム画面アプリ用) ---------- */
+(function () {
+  let busy = false;
+  const hash = (t) => { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return String(h >>> 0); };
+  async function check() {
+    if (busy) return; busy = true;
+    try {
+      const r = await fetch(location.pathname + "?_=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) return;
+      const h = hash(await r.text()), cur = ls.get("htmlHash", null);
+      ls.set("htmlHash", h);
+      if (cur && cur !== h && !locked) { location.replace(location.pathname + "?v=" + h); }
+    } catch {} finally { busy = false; }
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+  setTimeout(check, 1500);
+})();
+
 onAuthStateChanged(auth, (u) => {
   if (!u) {
     uid = null; shared = []; priv = []; room = null; rooms = [];
